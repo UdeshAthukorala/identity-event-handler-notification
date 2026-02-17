@@ -78,10 +78,12 @@ import static org.wso2.carbon.identity.configuration.mgt.core.constant.Configura
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.ACCESS_TOKEN_PROP;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.AUTH_TYPE;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.BASIC;
+import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.BODY;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.CHANNEL_TYPE_PROPERTY;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.CLIENT_CREDENTIAL;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.CLIENT_ID;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.CLIENT_SECRET;
+import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.CUSTOM;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.DEFAULT_EMAIL_PUBLISHER;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.DEFAULT_HANDLER_NAME;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.DEFAULT_PUSH_PUBLISHER;
@@ -110,10 +112,13 @@ import static org.wso2.carbon.identity.notification.sender.tenant.config.Notific
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.ErrorMessage.ERROR_CODE_TRANSFORMER_EXCEPTION;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.ErrorMessage.ERROR_CODE_VALIDATING_CONNECTED_APPS;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.FROM_ADDRESS;
+import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.INLINE_BODY_PROPERTY;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.INTERNAL_PROPERTIES;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.MY_ACCOUNT_SMS_RESOURCE_NAME;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.MY_ACCOUNT_SMS_RESOURCE_TYPE;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.PASSWORD;
+import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.PROVIDER;
+import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.PROVIDER_URL;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.PUBLISHER_RESOURCE_TYPE;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.PUBLISHER_TYPE_PROPERTY;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.NotificationSenderManagementConstants.PUSH_PUBLISHER_TYPE;
@@ -135,6 +140,7 @@ import static org.wso2.carbon.identity.notification.sender.tenant.config.utils.N
 import static org.wso2.carbon.identity.notification.sender.tenant.config.utils.NotificationSenderUtils.buildSmsSenderFromResource;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.utils.NotificationSenderUtils.deletePushSenderSecretProperties;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.utils.NotificationSenderUtils.generateEmailPublisher;
+import static org.wso2.carbon.identity.notification.sender.tenant.config.utils.NotificationSenderUtils.generateHTTPBasedEmailPublisher;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.utils.NotificationSenderUtils.getPushProvider;
 import static org.wso2.carbon.identity.notification.sender.tenant.config.utils.NotificationSenderUtils.updatePushSenderCredentials;
 
@@ -198,12 +204,21 @@ public class NotificationSenderManagementServiceImpl implements NotificationSend
 
     protected void validateInputs(EmailSenderDTO emailSender) throws NotificationSenderManagementClientException {
 
-        if (StringUtils.isBlank(emailSender.getSmtpServerHost()) ||
-                emailSender.getSmtpPort() == null ||
-                StringUtils.isBlank(emailSender.getFromAddress()) ||
-                StringUtils.isBlank(emailSender.getProperties().get(DISPLAY_NAME)) ||
-                StringUtils.isBlank(emailSender.getProperties().get(REPLY_TO_ADDRESS))) {
-            throw new NotificationSenderManagementClientException(ErrorMessage.ERROR_CODE_INVALID_INPUTS);
+        if (StringUtils.equalsIgnoreCase(emailSender.getProvider(), CUSTOM)) {
+            // If email provider is Custom(HTTP-Based); ProviderURL, FromAddress, body params should have valid inputs.
+            if (StringUtils.isBlank(emailSender.getProviderURL()) ||
+                    StringUtils.isBlank(emailSender.getProperties().get(INLINE_BODY_PROPERTY))) {
+                throw new NotificationSenderManagementClientException(ErrorMessage.ERROR_CODE_INVALID_INPUTS);
+            }
+        } else {
+            // If email provider is SMTP; SmtpServerHost, SmtpPort, FromAddress, Display Name, Reply to Address params should have valid inputs.
+            if (StringUtils.isBlank(emailSender.getSmtpServerHost()) ||
+                    emailSender.getSmtpPort() == null ||
+                    StringUtils.isBlank(emailSender.getFromAddress()) ||
+                    StringUtils.isBlank(emailSender.getProperties().get(DISPLAY_NAME)) ||
+                    StringUtils.isBlank(emailSender.getProperties().get(REPLY_TO_ADDRESS))) {
+                throw new NotificationSenderManagementClientException(ErrorMessage.ERROR_CODE_INVALID_INPUTS);
+            }
         }
 
         // If authType is not specified, username and password should be set in the first class attributes. i.e.
@@ -767,7 +782,11 @@ public class NotificationSenderManagementServiceImpl implements NotificationSend
 
         InputStream inputStream;
         try {
-            inputStream = generateEmailPublisher(emailSender);
+            if (StringUtils.equalsIgnoreCase(emailSender.getProvider(), CUSTOM)) {
+                inputStream = generateHTTPBasedEmailPublisher(emailSender);
+            } else {
+                inputStream = generateEmailPublisher(emailSender);
+            }
         } catch (ParserConfigurationException e) {
             throw new NotificationSenderManagementServerException(ERROR_CODE_PARSER_CONFIG_EXCEPTION,
                     e.getMessage(), e);
@@ -777,7 +796,12 @@ public class NotificationSenderManagementServiceImpl implements NotificationSend
 
         Resource resource = new Resource();
         resource.setResourceName(emailSender.getName());
-        Map<String, String> emailSenderAttributes = getEmailSenderAttributes(emailSender);
+        Map<String, String> emailSenderAttributes;
+        if (StringUtils.equalsIgnoreCase(emailSender.getProvider(), CUSTOM)) {
+            emailSenderAttributes = getHTTPBasedEmailSenderAttributes(emailSender);
+        } else {
+            emailSenderAttributes = getEmailSenderAttributes(emailSender);
+        }
 
         List<Attribute> resourceAttributes = new ArrayList<>();
         try {
@@ -827,6 +851,7 @@ public class NotificationSenderManagementServiceImpl implements NotificationSend
     private static Map<String, String> getEmailSenderAttributes(EmailSenderDTO emailSender) {
 
         Map<String, String> emailSenderAttributes = emailSender.getProperties();
+        emailSenderAttributes.put(PROVIDER, emailSender.getProvider());
         emailSenderAttributes.put(FROM_ADDRESS, emailSender.getFromAddress());
         emailSenderAttributes.put(SMTP_SERVER_HOST, emailSender.getSmtpServerHost());
         emailSenderAttributes.put(SMTP_PORT, String.valueOf(emailSender.getSmtpPort()));
@@ -838,6 +863,16 @@ public class NotificationSenderManagementServiceImpl implements NotificationSend
         if (StringUtils.isNotEmpty(emailSender.getPassword())) {
             emailSenderAttributes.put(PASSWORD, emailSender.getPassword());
         }
+        return emailSenderAttributes;
+    }
+
+    private static Map<String, String> getHTTPBasedEmailSenderAttributes(EmailSenderDTO emailSender) {
+
+        Map<String, String> emailSenderAttributes = emailSender.getProperties();
+        emailSenderAttributes.put(PROVIDER, emailSender.getProvider());
+        emailSenderAttributes.put(PROVIDER_URL, emailSender.getProviderURL());
+        emailSenderAttributes.put(FROM_ADDRESS, emailSender.getFromAddress());
+        emailSenderAttributes.put(AUTH_TYPE, emailSender.getAuthType());
         return emailSenderAttributes;
     }
 
@@ -869,6 +904,12 @@ public class NotificationSenderManagementServiceImpl implements NotificationSend
                     break;
                 case FROM_ADDRESS:
                     emailSender.setFromAddress(value);
+                    break;
+                case PROVIDER:
+                    emailSender.setProvider(value);
+                    break;
+                case PROVIDER_URL:
+                    emailSender.setProviderURL(value);
                     break;
                 // Decrypting username and password as they need to be available in the notification sender v1 API
                 // response.
